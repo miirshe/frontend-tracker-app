@@ -1,9 +1,8 @@
 import React from 'react'
+import ProjectsViews from '../../views/projects'
 
 const Projects = () => {
-  return (
-    <div>projects</div>
-  )
+    return <ProjectsViews/>
 }
 
 export default Projects

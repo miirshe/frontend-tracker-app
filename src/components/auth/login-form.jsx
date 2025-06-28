@@ -9,24 +9,71 @@ import {
 } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { useLoginMutation } from "../../redux/api/authApi"
-import { useState } from "react"
+import { useLoginUserMutation } from "../../redux/api/userApi"
+import { useNavigate } from "react-router-dom"
+import { toast } from "sonner"
+import { useForm } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
+import { z } from "zod"
+
+// Login validation schema
+const loginSchema = z.object({
+  email: z
+    .string()
+    .min(1, "Email is required")
+    .email("Invalid email address"),
+  password: z
+    .string()
+    .min(1, "Password is required")
+    .min(6, "Password must be at least 6 characters")
+})
 
 export function LoginForm({
   className,
   ...props
 }) {
-
-    const  [ Login ] =  useLoginMutation()
-    const [email, setEmail] = useState("")
-    const [password, setPassword] = useState("")
-
-    const handleSubmit = (e) => {
-        e.preventDefault()
-
-        console.log(email, password)
-        Login({email, password})
+  const { 
+    register, 
+    handleSubmit, 
+    formState: { errors, isSubmitting }
+  } = useForm({
+    resolver: zodResolver(loginSchema),
+    defaultValues: {
+      email: "",
+      password: ""
     }
+  })
+
+
+  const [loginUser, { isLoading }] = useLoginUserMutation()
+  const navigate = useNavigate()
+
+  const onSubmit = async (data) => {
+    try {
+      const result = await loginUser(data).unwrap()
+      
+      // Store token in localStorage (you might want to use a more secure method)
+      if (result.token) {
+        localStorage.setItem('token', result.token)
+        localStorage.setItem('user', JSON.stringify(result.data))
+      }
+
+      toast.success("Login successful! Welcome back.")
+      
+      // Navigate to dashboard after a short delay to show the toast
+      setTimeout(() => {
+        navigate("/dashboard")
+      }, 1000)
+
+    } catch (error) {
+      console.error('Login error:', error)
+      const errorMessage = error?.data?.message || "Login failed. Please try again."
+      toast.error(errorMessage)
+    }
+  }
+
+  const isFormLoading = isLoading || isSubmitting
+
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>
       <Card>
@@ -37,7 +84,7 @@ export function LoginForm({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit}>
+          <form onSubmit={handleSubmit(onSubmit)}>
             <div className="flex flex-col gap-6">
               <div className="grid gap-3">
                 <Label htmlFor="email">Email</Label>
@@ -45,10 +92,14 @@ export function LoginForm({
                   id="email"
                   type="email"
                   placeholder="m@example.com"
-                  required
-                  onChange={(e) => setEmail(e.target.value)}
+                  disabled={isFormLoading}
+                  {...register("email")}
                 />
+                {errors.email && (
+                  <p className="text-sm text-red-500">{errors.email.message}</p>
+                )}
               </div>
+              
               <div className="grid gap-3">
                 <div className="flex items-center">
                   <Label htmlFor="password">Password</Label>
@@ -59,13 +110,22 @@ export function LoginForm({
                     Forgot your password?
                   </a>
                 </div>
-                <Input id="password" type="password" required onChange={(e) => setPassword(e.target.value)} />
+                <Input 
+                  id="password" 
+                  type="password" 
+                  disabled={isFormLoading}
+                  {...register("password")}
+                />
+                {errors.password && (
+                  <p className="text-sm text-red-500">{errors.password.message}</p>
+                )}
               </div>
+              
               <div className="flex flex-col gap-3">
-                <Button type="submit" className="w-full">
-                  Login
+                <Button type="submit" className="w-full" disabled={isFormLoading}>
+                  {isFormLoading ? "Logging in..." : "Login"}
                 </Button>
-                <Button variant="outline" className="w-full">
+                <Button variant="outline" className="w-full" disabled={isFormLoading}>
                   Login with Google
                 </Button>
               </div>

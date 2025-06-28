@@ -1,9 +1,8 @@
 import React from 'react'
+import UsersView from '@/views/users'
 
 const Users = () => {
-  return (
-    <div>Users</div>
-  )
+  return <UsersView/>
 }
 
 export default Users
