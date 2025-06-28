@@ -3,7 +3,8 @@ import { fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 import { baseUrl } from "./baseUrl";
 import { removeToken, removeUser } from "../../lib/utils";
 
-export const baseQuery = fetchBaseQuery({
+export const baseQuery = 
+fetchBaseQuery({
     baseUrl: baseUrl,
     prepareHeaders: (headers) => {
         const token = localStorage.getItem("token");

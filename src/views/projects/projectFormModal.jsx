@@ -20,10 +20,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
+import { Badge } from '@/components/ui/badge';
 import { useCreateProjectMutation, useUpdateProjectMutation } from '@/redux/api/projectApi';
 import { useGetUsersQuery } from '@/redux/api/userApi';
 import { createProjectSchema, updateProjectSchema } from './schema';
+import { X, User, Plus } from 'lucide-react';
 
 const ProjectFormModal = ({ 
   isOpen, 
@@ -33,6 +42,9 @@ const ProjectFormModal = ({
 }) => {
   const isEditing = !!project;
   const schema = isEditing ? updateProjectSchema : createProjectSchema;
+
+  // State for member search
+  const [memberSearch, setMemberSearch] = useState('');
 
   const {
     register,
@@ -55,19 +67,31 @@ const ProjectFormModal = ({
   const [createProject, { isLoading: isCreating }] = useCreateProjectMutation();
   const [updateProject, { isLoading: isUpdating }] = useUpdateProjectMutation();
   
-  // Fetch users for members selection
+  // Fetch users for members selection with search
   const { data: usersData, isLoading: usersLoading } = useGetUsersQuery({
-    limit: 100, // Get more users for selection
+    limit: 50, // Reasonable limit for selection
+    search: memberSearch.trim().length >= 2 ? memberSearch : '', // Only search if 2+ characters
+    searchFields: 'username,email',
     sort: 'username:asc'
   });
 
-  const selectedStatus = watch('status');
+  // Also get selected users data (for when editing)
   const selectedMembers = watch('members');
+  const { data: selectedUsersData } = useGetUsersQuery({
+    limit: 100,
+    sort: 'username:asc'
+  }, {
+    skip: !selectedMembers?.length // Only fetch if there are selected members
+  });
 
   const users = usersData?.docs || [];
+  const allUsers = selectedUsersData?.docs || [];
 
   useEffect(() => {
     if (isOpen) {
+      // Reset search when modal opens
+      setMemberSearch('');
+      
       if (isEditing && project) {
         // Extract member IDs for form
         const memberIds = project.members?.map(member => 
@@ -117,20 +141,40 @@ const ProjectFormModal = ({
 
   const handleClose = () => {
     reset();
+    setMemberSearch(''); // Reset search when closing
     onClose();
   };
 
-  const handleMemberChange = (userId, checked) => {
+  const handleMemberSelect = (userId) => {
     const currentMembers = selectedMembers || [];
-    let newMembers;
-    
-    if (checked) {
-      newMembers = [...currentMembers, userId];
-    } else {
-      newMembers = currentMembers.filter(id => id !== userId);
+    if (!currentMembers.includes(userId)) {
+      setValue('members', [...currentMembers, userId]);
     }
-    
-    setValue('members', newMembers);
+    // Clear search after selection
+    setMemberSearch('');
+  };
+
+  const handleMemberRemove = (userId) => {
+    const currentMembers = selectedMembers || [];
+    setValue('members', currentMembers.filter(id => id !== userId));
+  };
+
+  const getSelectedUsers = () => {
+    // Get selected users from allUsers data (which has all users)
+    return allUsers.filter(user => 
+      selectedMembers?.includes(user._id || user.id)
+    );
+  };
+
+  const getAvailableUsers = () => {
+    // Return users from search results, filtered to exclude already selected
+    return users.filter(user => 
+      !selectedMembers?.includes(user._id || user.id)
+    );
+  };
+
+  const handleSearchChange = (value) => {
+    setMemberSearch(value);
   };
 
   const isLoading = isSubmitting || isCreating || isUpdating;
@@ -212,55 +256,86 @@ const ProjectFormModal = ({
           {/* Members Selection */}
           <div className="space-y-2">
             <Label>Team Members</Label>
-            <div className="border rounded-md p-3 max-h-48 overflow-y-auto">
-              {usersLoading ? (
-                <div className="text-sm text-muted-foreground">Loading users...</div>
-              ) : users.length === 0 ? (
-                <div className="text-sm text-muted-foreground">No users available</div>
-              ) : (
-                <div className="space-y-2">
-                  {users.map((user) => {
-                    const userId = user._id || user.id;
-                    const isSelected = selectedMembers?.includes(userId) || false;
-                    
-                    return (
-                      <div key={userId} className="flex items-center space-x-2">
-                        <Checkbox
-                          id={`member-${userId}`}
-                          checked={isSelected}
-                          onCheckedChange={(checked) => handleMemberChange(userId, checked)}
+            
+            {/* Selected Members Display */}
+            {getSelectedUsers().length > 0 && (
+              <div className="flex flex-wrap gap-2 p-2 border rounded-md bg-muted/50">
+                {getSelectedUsers().map((user) => {
+                  const userId = user._id || user.id;
+                  return (
+                    <Badge key={userId} variant="secondary" className="gap-1">
+                      <div className="h-4 w-4 rounded-full bg-primary/20 flex items-center justify-center">
+                        <span className="text-xs font-medium">
+                          {(user.username || user.name || 'U').charAt(0).toUpperCase()}
+                        </span>
+                      </div>
+                      <span>{user.username || user.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleMemberRemove(userId)}
+                        className="ml-1 hover:bg-destructive/20 rounded-full p-0.5"
+                        disabled={isLoading}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Search and Add Members */}
+            <Command className="border rounded-md">
+              <CommandInput 
+                placeholder="Search users to add..." 
+                value={memberSearch}
+                onValueChange={handleSearchChange}
+              />
+              <CommandList>
+                <CommandEmpty>
+                  {usersLoading 
+                    ? "Searching users..." 
+                    : memberSearch.trim() 
+                      ? "No users found matching your search." 
+                      : "Start typing to search for users..."
+                  }
+                </CommandEmpty>
+                {getAvailableUsers().length > 0 && (
+                  <CommandGroup heading={`Available Users ${memberSearch ? `(${getAvailableUsers().length} found)` : ''}`}>
+                    {getAvailableUsers().map((user) => {
+                      const userId = user._id || user.id;
+                      return (
+                        <CommandItem
+                          key={userId}
+                          onSelect={() => handleMemberSelect(userId)}
+                          className="cursor-pointer"
                           disabled={isLoading}
-                        />
-                        <label
-                          htmlFor={`member-${userId}`}
-                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer flex-1"
                         >
-                          <div className="flex items-center gap-2">
+                          <Plus className="mr-2 h-4 w-4" />
+                          <div className="flex items-center gap-2 flex-1">
                             <div className="h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center">
-                              <span className="text-xs font-medium">
-                                {(user.username || user.name || 'U').charAt(0).toUpperCase()}
-                              </span>
+                              <User className="h-3 w-3" />
                             </div>
-                            <div>
+                            <div className="flex-1">
                               <div className="font-medium">{user.username || user.name}</div>
                               <div className="text-xs text-muted-foreground">{user.email}</div>
                             </div>
                           </div>
-                        </label>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+                        </CommandItem>
+                      );
+                    })}
+                  </CommandGroup>
+                )}
+              </CommandList>
+            </Command>
+
             {errors.members && (
               <p className="text-sm text-red-500">{errors.members.message}</p>
             )}
-            {selectedMembers?.length > 0 && (
-              <p className="text-xs text-muted-foreground">
-                {selectedMembers.length} member{selectedMembers.length !== 1 ? 's' : ''} selected
-              </p>
-            )}
+            
+            <p className="text-xs text-muted-foreground">
+              {selectedMembers?.length || 0} member{selectedMembers?.length !== 1 ? 's' : ''} selected
+            </p>
           </div>
 
           <DialogFooter className="gap-2 pt-4">
